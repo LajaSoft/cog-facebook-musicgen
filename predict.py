@@ -14,7 +14,6 @@ from audiocraft.data.audio import audio_write
 import os
 import random
 
-
 import calendar;
 import time;
 
@@ -42,7 +41,13 @@ class Predictor(BasePredictor):
         wav = self.model.generate(descriptions, progress = True)  # generates .
         one_wav = wav[0]
         ts = calendar.timegm(time.gmtime())
-        audio_write(f'out/{prompt.strip().replace(" ", "_")}-{self.modelSize}_{seed}-{duration}s', one_wav.cpu(), self.model.sample_rate, strategy="loudness")
+        audio_write(
+                    f'out/{prompt.strip().replace(" ", "_")}-{self.modelSize}_{seed}-{duration}s',
+                    one_wav.cpu(), 
+                    self.model.sample_rate, 
+                    strategy="loudness",
+                    loudness_compressor=True
+                    )
                                                                                       
         # processed_input = preprocess(image)
         # output = self.model(processed_image, scale)
