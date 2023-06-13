@@ -37,13 +37,12 @@ class Predictor(BasePredictor):
     ) -> Path:
         """Run a single prediction on the model"""
         descriptions = [prompt]
-        random.seed(seed)
         torch.manual_seed(seed)
-        self.model.set_generation_params(duration=duration)  # generate 8 seconds.
-        wav = self.model.generate(descriptions, progress = True)  # generates 3 samples.
+        self.model.set_generation_params(duration=duration)  
+        wav = self.model.generate(descriptions, progress = True)  # generates .
         one_wav = wav[0]
         ts = calendar.timegm(time.gmtime())
-        audio_write(f'out/{prompt.replace(" ", "_")}-{self.modelSize}_{seed}', one_wav.cpu(), self.model.sample_rate, strategy="loudness")
+        audio_write(f'out/{prompt.strip().replace(" ", "_")}-{self.modelSize}_{seed}-{duration}s', one_wav.cpu(), self.model.sample_rate, strategy="loudness")
                                                                                       
         # processed_input = preprocess(image)
         # output = self.model(processed_image, scale)
