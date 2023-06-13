@@ -1,0 +1,6 @@
+__pycache__
+.cog
+.git
+.tcache
+.container-cache
+**.wav
