@@ -2,11 +2,14 @@
 
 ## features
 * run in docker
-* zero conf
+* can continue itself as much as vram you have
+* almost zero conf
 
 ## known bugs 
-* output segfault in the end of execution
+* output duplicates to output.wav
 * lame code
+* need to loadout generated parts to cpu, or may be even disk, for really long generations
+* there seems problem in audiocraft library last version, progress shows  wrong total, 
 
 ## Installation:
 
@@ -30,12 +33,21 @@ cog predict
 
 set prompt seed and duration:
 
-
+# **RUN**
 ```
-cog predict -i prompt="Celtic dance, rythmic" -i duration=10  -i seed=10
+ cog predict  -i prompt='C major, Roland TR-808, Korg KR-33,  celtic dance, violin, moderate, jazz, disco, rythmic, complex melody' -i duration=90 -i seed=1234
 ```
+---
+## config
+to change model size and other params, edit musicgen_config.json (i have .example)
 
-to change model size, edit predict.py (sorry), default is "medium"
+## currently working model sizes:
+ * small
+ * medium
+ * melody
+ * large
+
+
 
 output wavs in `./out/` directory
 

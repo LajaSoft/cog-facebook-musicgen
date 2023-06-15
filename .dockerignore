@@ -1,2 +1,4 @@
 .git
 cog.yaml
+out
+.container-cache

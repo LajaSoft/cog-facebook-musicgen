@@ -5,3 +5,4 @@ __pycache__
 .container-cache
 **.wav
 out/**
+musicgen_config.json
