@@ -125,8 +125,8 @@ class Predictor(BasePredictor):
                 file_name,
                 collected_parts.cpu(), 
                 self.model.sample_rate, 
-                # strategy="loudness",
-                # loudness_compressor=True
+                strategy="loudness",
+                loudness_compressor=True
         )
         print ("written", file_name)
         return Path(f'{file_name}.wav') # not sure why Ineed this, it writes to current directory output.wav, but without this I taking segfaults and unicorn errors :)
