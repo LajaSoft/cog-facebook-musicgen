@@ -79,7 +79,7 @@ class Predictor(BasePredictor):
 
         descriptions = [prompt]
         torch.manual_seed(seed)
-        self.model.set_generation_params(duration=duration, sample_rate=44100)  
+        self.model.set_generation_params(duration=duration)  
         all_parts = self.model.generate(descriptions, progress = True)  # generates .
         current_duration = duration
         first_wav = all_parts[0]
