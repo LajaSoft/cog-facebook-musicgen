@@ -1,0 +1,6 @@
+{
+    "MODEL_SIZE": "small",
+    "PART_LEN": 30,
+    "CUT_LEN": 10,
+    "TAIL_CUT_LEN": 5
+}
