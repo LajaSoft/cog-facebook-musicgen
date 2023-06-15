@@ -86,15 +86,17 @@ class Predictor(BasePredictor):
         collected_parts = first_wav
         if total_duration:
             current_duration = current_duration = collected_parts.shape[1] / self.model.sample_rate
+            collected_parts = collected_parts[..., : -TAIL_CUT_LEN * self.model.sample_rate]
             last_wav = first_wav
             while round(current_duration) < total_duration:
                 current_duration = collected_parts.shape[1] / self.model.sample_rate
                 print ("current_duration", current_duration , '/', total_duration)
                 part_to_continue = collected_parts[..., -int(PART_LEN * self.model.sample_rate):]
                 part_to_continue = part_to_continue[..., -int(CUT_LEN * self.model.sample_rate):]
-                part_to_continue = part_to_continue[..., :-TAIL_CUT_LEN * self.model.sample_rate]
                 part_to_continue_length = part_to_continue.shape[1]
-                planned_duration = min(PART_LEN, total_duration - int(current_duration) + CUT_LEN - TAIL_CUT_LEN)
+                planned_duration = min(PART_LEN, total_duration - int(current_duration - part_to_continue_length))
+
+                print ("part_to_continue duration", part_to_continue.shape[1] / self.model.sample_rate)
                 print ("planned_duration", planned_duration)
                 print ("part_to_continue", part_to_continue.shape)
                 #all_parts[0] = part_to_continue
@@ -109,6 +111,8 @@ class Predictor(BasePredictor):
                 print ("last_wav before", last_wav.shape)
                 print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
                 last_wav = last_wav[...,max(part_to_continue_length, 0):]
+                if (planned_duration > PART_LEN):
+                    last_wav = last_wav[..., : -TAIL_CUT_LEN * self.model.sample_rate]
                 print ("last_wav", last_wav.shape)
                 collected_parts = torch.cat([collected_parts, last_wav], dim = 1)
                 current_duration = collected_parts.shape[1] / self.model.sample_rate
