@@ -85,8 +85,10 @@ class Predictor(BasePredictor):
         first_wav = all_parts[0]
         collected_parts = first_wav
         if total_duration:
+            if TAIL_CUT_LEN > 0:
+                print ("cutting tails", TAIL_CUT_LEN)
+                collected_parts = collected_parts[..., : -TAIL_CUT_LEN * self.model.sample_rate]
             current_duration = current_duration = collected_parts.shape[1] / self.model.sample_rate
-            collected_parts = collected_parts[..., : -TAIL_CUT_LEN * self.model.sample_rate]
             last_wav = first_wav
             while round(current_duration) < total_duration:
                 current_duration = collected_parts.shape[1] / self.model.sample_rate
@@ -111,7 +113,7 @@ class Predictor(BasePredictor):
                 print ("last_wav before", last_wav.shape)
                 print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
                 last_wav = last_wav[...,max(part_to_continue_length, 0):]
-                if (planned_duration > PART_LEN):
+                if (planned_duration > PART_LEN and TAIL_CUT_LEN > 0):
                     last_wav = last_wav[..., : -TAIL_CUT_LEN * self.model.sample_rate]
                 print ("last_wav", last_wav.shape)
                 collected_parts = torch.cat([collected_parts, last_wav], dim = 1)
