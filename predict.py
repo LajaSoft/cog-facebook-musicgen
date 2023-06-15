@@ -70,7 +70,7 @@ class Predictor(BasePredictor):
 		prompt:str = 'happy birthday polka',
         duration:int = 10,
         seed:int = random.randint(0, 1000000000)
-    ) -> Iterator[Path]:
+    ) -> Path:
         """Run a single prediction on the model"""
         total_duration = 0
         if (duration > PART_LEN):
@@ -79,7 +79,7 @@ class Predictor(BasePredictor):
 
         descriptions = [prompt]
         torch.manual_seed(seed)
-        self.model.set_generation_params(duration=duration)  
+        self.model.set_generation_params(duration=duration, sample_rate=44100)  
         all_parts = self.model.generate(descriptions, progress = True)  # generates .
         current_duration = duration
         first_wav = all_parts[0]
