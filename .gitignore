@@ -4,5 +4,6 @@ __pycache__
 .tcache
 .container-cache
 **.wav
+**.mp3
 out/**
 musicgen_config.json

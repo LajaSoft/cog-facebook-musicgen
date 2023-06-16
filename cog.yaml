@@ -18,8 +18,8 @@ build:
   python_packages:
      - "torchaudio"
      - "torch==2.0.1"
-  #  - "nvidia-cudnn-cu11==8.5.0.96"
      - "git+https://github.com/facebookresearch/audiocraft.git@c9179f8"
+     - "ffmpeg-python"
   
   # commands run after the environment is setup
   #run:

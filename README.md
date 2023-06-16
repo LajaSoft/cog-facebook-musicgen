@@ -35,10 +35,10 @@ set prompt seed and duration:
 
 # **RUN**
 ```
- cog predict  -i prompt='C major, Roland TR-808, Korg KR-33,  celtic dance, violin, moderate, jazz, disco, rythmic, complex melody' -i duration=90 -i seed=1234
+ cog predict  -i prompt='C major, Roland TR-808, Korg KR-33,  celtic dance, violin, moderate, jazz, disco, rythmic, complex melody' -i duration=90 -i seed=1234 -i cfg_coef=3 -i temperature=1 
 ```
 
-run with `-i burn_times=n` (I tried with 4, it's amazing somehow) to burn out using chroma from audiocraf (works only with melody model, need almost twice VRAM, however just tested it on 8g VRAM 10s, seems we can)
+run with `-i burn_times=n` to burn first part with chroma n times, and use chroma of result 1st part  as chroma to all subsequent "continues"
 
 ---
 ## config
