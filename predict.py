@@ -129,10 +129,10 @@ class Predictor(BasePredictor):
                     descriptions=descriptions,
                     duration = planned_duration,
                     seed = seed
-                )[0]
+                )
                 if (burn_times > 0):
                     last_wav = chroma_burn(self.model, last_wav, self.model.sample_rate, descriptions, planned_duration, seed, steps = burn_times)
-
+                last_wav = last_wav[0]
                 print ("last_wav before", last_wav.shape)
                 print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
                 last_wav = last_wav[...,max(part_to_continue_length, 0):]
