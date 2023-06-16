@@ -201,7 +201,7 @@ class Predictor(BasePredictor):
                     descriptions=descriptions,
                     duration = planned_duration,
                     seed = seed,
-                    melody_wavs=first_wav if burn_times > 0 else None
+                    melody_wavs=first_wav.to(self.model.device) if burn_times > 0 else None
                 )
                 last_wav = last_wav[0]
                 orig_last_wav = last_wav
