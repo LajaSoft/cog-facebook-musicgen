@@ -47,15 +47,32 @@ def my_progress_callback(generated_tokens, total_tokens):
     progress = f"[{bar}] {generated_tokens}/{total_tokens}"
     print(f"r{progress}", end="\r")
 
+# TODO make class here, reduce args calls
 def continue_melody(model, prompt, rate: int, descriptions = [], duration = PART_LEN, seed = random.randint(0, 1000000000)):
+    torch.manual_seed(seed)
     # print current torch seed
-    # torch.manual_seed(seed)
     print("seed:", torch.seed())
     model.set_generation_params(duration=duration)
     part = model.generate_continuation(prompt=prompt, prompt_sample_rate = rate,
                               descriptions = descriptions,
                               progress = False)
     return part
+
+
+#def generate_with_chroma(self, descriptions: tp.List[str], melody_wavs: MelodyType,
+#                             melody_sample_rate: int, progress: bool = False) -> torch.Tensor:
+def chroma_burn(model, prompt, rate: int, descriptions = [], duration = PART_LEN, seed = random.randint(0, 1000000000), steps = 1) -> torch.Tensor:
+    current_melody = prompt
+    for i in range(steps):
+        print ("burning step", i)
+        torch.manual_seed(seed)
+        model.set_generation_params(duration=duration)
+        current_melody = model.generate_with_chroma(
+            descriptions=descriptions,
+            melody_wavs=current_melody,
+            melody_sample_rate=rate,
+        ) 
+    return current_melody
 
 
 class Predictor(BasePredictor):
@@ -69,7 +86,8 @@ class Predictor(BasePredictor):
         self,
 		prompt:str = 'happy birthday polka',
         duration:int = 10,
-        seed:int = random.randint(0, 1000000000)
+        seed:int = random.randint(0, 1000000000),
+        burn_times:int = 0
     ) -> Path:
         """Run a single prediction on the model"""
         total_duration = 0
@@ -81,6 +99,8 @@ class Predictor(BasePredictor):
         torch.manual_seed(seed)
         self.model.set_generation_params(duration=duration)  
         all_parts = self.model.generate(descriptions, progress = True)  # generates .
+        if (burn_times > 0):
+            all_parts = chroma_burn(self.model, all_parts, self.model.sample_rate, descriptions, duration, seed, steps = burn_times)
         current_duration = duration
         first_wav = all_parts[0]
         collected_parts = first_wav
@@ -110,6 +130,9 @@ class Predictor(BasePredictor):
                     duration = planned_duration,
                     seed = seed
                 )[0]
+                if (burn_times > 0):
+                    last_wav = chroma_burn(self.model, last_wav, self.model.sample_rate, descriptions, planned_duration, seed, steps = burn_times)
+
                 print ("last_wav before", last_wav.shape)
                 print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
                 last_wav = last_wav[...,max(part_to_continue_length, 0):]

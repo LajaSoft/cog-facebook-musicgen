@@ -37,6 +37,9 @@ set prompt seed and duration:
 ```
  cog predict  -i prompt='C major, Roland TR-808, Korg KR-33,  celtic dance, violin, moderate, jazz, disco, rythmic, complex melody' -i duration=90 -i seed=1234
 ```
+
+run with `-i burn_times=n` (I tried with 4, it's amazing somehow) to burn out using chroma from audiocraf (works only with melody model, need almost twice VRAM, however just tested it on 8g VRAM 10s, seems we can)
+
 ---
 ## config
 to change model size and other params, edit musicgen_config.json (i have .example)
