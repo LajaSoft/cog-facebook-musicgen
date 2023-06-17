@@ -212,6 +212,11 @@ class Predictor(BasePredictor):
                                 strategy="loudness",
                                 loudness_compressor=False
                         )
+                        part_file_name = (
+                            f'out/{prompt.strip().replace(" ", "_").replace(":","=")}-{seed}-{int(prev_layer["wav"].shape[1]/self.model.sample_rate)}s' +
+                            f'-burn={burn_step-2}' #if you see it - sorry!
+                        )
+                        convert_to_mp3('out/_preview_tmp.wav', f'{part_file_name}.mp3', configuration_data)
                 while round(current_duration) < total_duration:
                     chroma_part = None
                     if (prev_layer is not None):
