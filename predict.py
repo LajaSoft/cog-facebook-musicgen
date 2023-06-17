@@ -46,6 +46,8 @@ os.environ['XDG_CACHE_HOME']="/src/.container-cache" #need to chache locally
 print(torch.version.cuda)
 
 def my_progress_callback(generated_tokens, total_tokens):
+    if (generated_tokens % 10) != 0:
+        return
     bar_len = 20  # Length of the progress bar
     filled_len = int(bar_len * generated_tokens / total_tokens)
     bar = '=' * filled_len + '-' * (bar_len - filled_len)
@@ -70,6 +72,13 @@ def chroma_burn(model, prompt, rate: int, descriptions = [], seed = random.randi
     whole_melody = prompt
     whole_melody_duration = whole_melody.shape[1]
     for i in range(steps):
+        audio_write(
+                'out/_preview_tmp',
+                whole_melody.cpu(), 
+                model.sample_rate, 
+                strategy="loudness",
+                loudness_compressor=True
+        )
         print ("burning step", i, 'with seed', seed)
         # if whole melody longer than part steps slice it and burn each part
         for seek in range(0, whole_melody_duration, PART_LEN * rate):
@@ -147,7 +156,8 @@ class Predictor(BasePredictor):
         temperature:float = 1,
         top_k:int = 250,
         top_p:float = 0,
-        cfg_coef:float = 3.0
+        cfg_coef:float = 3.0,
+        use_sampling: bool = True
     ) ->Iterator[Path]:
         """Run a single prediction on the model"""
         total_duration = 0
@@ -167,14 +177,15 @@ class Predictor(BasePredictor):
             'top_p': top_p,
             'cfg_coef': cfg_coef,
             'burn_times': burn_times,
-            'description': prompt
+            'description': prompt,
+            'use_sampling': use_sampling
         }
-        self.model.set_generation_params(duration=duration, temperature=temperature, top_k=top_k, top_p=top_p, cfg_coef=cfg_coef)
+        self.model.set_generation_params(duration=duration, temperature=temperature, top_k=top_k, top_p=top_p, cfg_coef=cfg_coef, use_sampling=use_sampling)
 
         all_parts = self.model.generate(descriptions, progress = True)  # generates .
         current_duration = duration
         collected_parts = all_parts[0]
-        chroma = chroma_burn(self.model, collected_parts.cpu(), self.model.sample_rate, descriptions, seed, steps = burn_times)
+        chroma = chroma_burn(model = self.model, prompt= collected_parts.cpu(),rate= self.model.sample_rate,descriptions= descriptions,seed= seed, steps = burn_times)
         collected_parts = chroma.cpu()
         first_wav = collected_parts
         if total_duration:
@@ -185,6 +196,13 @@ class Predictor(BasePredictor):
             last_wav = first_wav.to(self.model.device)
             orig_last_wav = last_wav
             while round(current_duration) < total_duration:
+                audio_write(
+                        'out/_preview_tmp',
+                        collected_parts.cpu(), 
+                        self.model.sample_rate, 
+                        strategy="loudness",
+                        loudness_compressor=False
+                )
                 current_duration = collected_parts.shape[1] / self.model.sample_rate
                 print ("current_duration", current_duration , '/', total_duration)
                 part_to_continue = collected_parts[..., -int(PART_LEN * self.model.sample_rate):].to(self.model.device)
@@ -201,7 +219,7 @@ class Predictor(BasePredictor):
                     descriptions=descriptions,
                     duration = planned_duration,
                     seed = seed,
-                    melody_wavs=first_wav.to(self.model.device) if burn_times > 0 else None
+                    melody_wavs=orig_last_wav.to(self.model.device) if burn_times > 0 else None
                 )
                 last_wav = last_wav[0]
                 orig_last_wav = last_wav
@@ -230,17 +248,6 @@ class Predictor(BasePredictor):
         )
         print ("written", file_name)
         convert_to_mp3(f'{file_name}.wav', f'{file_name}.mp3', configuration_data)
-        yield Path(f'{file_name}.mp3') # not sure why I need this, it writes to current directory output.wav, but without this I taking segfaults and unicorn errors :)
-        # chromas = chroma_burn(self.model, collected_parts.cpu(), self.model.sample_rate, descriptions, seed, steps = burn_times)
-        # init_file_name = file_name
-        # for index, chroma in chromas:
-        #     file_name = f"{init_file_name}_burned={index}"
-        #     audio_write(
-        #             file_name,
-        #             chroma.cpu(), 
-        #             self.model.sample_rate,
-        #             strategy="loudness",
-        #             loudness_compressor=True
-        #     )
-        #     print ("written", file_name)
-        #     yield Path(f'{file_name}.wav')
+        #remove wav
+        os.remove(f'{file_name}.wav')
+        yield Path(f'{file_name}.mp3')
