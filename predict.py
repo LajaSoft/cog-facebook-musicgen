@@ -60,6 +60,8 @@ def continue_melody(model, prompt, rate: int, descriptions = [], duration = PART
     # print current torch seed
     print("seed:", torch.seed())
     model.set_generation_params(duration=duration)
+    if prompt is None:
+        return model.generate(descriptions=descriptions)
     part = generate_continuation_with_chroma(model, prompt=prompt, prompt_sample_rate = rate,
                               descriptions = descriptions, melody_wavs=melody_wavs,
                               progress = False)
@@ -135,7 +137,7 @@ def generate_continuation_with_chroma(model, prompt: torch.Tensor, prompt_sample
             convert_audio(wav, model.sample_rate, model.sample_rate, model.audio_channels)
             if wav is not None else None
             for wav in melody_wavs]
-
+    print (descriptions, prompt.shape, melody_wavs)
     attributes, prompt_tokens = model._prepare_tokens_and_attributes(descriptions = descriptions, prompt = prompt, melody_wavs = melody_wavs)
     assert prompt_tokens is not None
     return model._generate_tokens(attributes, prompt_tokens, progress)
@@ -181,56 +183,88 @@ class Predictor(BasePredictor):
             'use_sampling': use_sampling
         }
         self.model.set_generation_params(duration=duration, temperature=temperature, top_k=top_k, top_p=top_p, cfg_coef=cfg_coef, use_sampling=use_sampling)
-
-        all_parts = self.model.generate(descriptions, progress = True)  # generates .
-        current_duration = duration
-        collected_parts = all_parts[0]
-        chroma = chroma_burn(model = self.model, prompt= collected_parts.cpu(),rate= self.model.sample_rate,descriptions= descriptions,seed= seed, steps = burn_times)
-        collected_parts = chroma.cpu()
-        first_wav = collected_parts
+        collected_parts = None
+        if (total_duration == 0):
+            all_parts = self.model.generate(descriptions, progress = True)  # generates .
+            current_duration = duration
+            collected_parts = all_parts[0]
+            chroma = chroma_burn( 
+                model = self.model,
+                prompt= collected_parts.cpu(),
+                rate= self.model.sample_rate,
+                descriptions= descriptions,
+                seed= seed, 
+                steps = burn_times
+                )
+            collected_parts = chroma.cpu()
         if total_duration:
-            if TAIL_CUT_LEN > 0:
-                print ("cutting tails", TAIL_CUT_LEN)
-                collected_parts = collected_parts[..., : -TAIL_CUT_LEN * self.model.sample_rate].cpu()
-            current_duration = current_duration = collected_parts.shape[1] / self.model.sample_rate
-            last_wav = first_wav.to(self.model.device)
-            orig_last_wav = last_wav
-            while round(current_duration) < total_duration:
-                audio_write(
-                        'out/_preview_tmp',
+            prev_layer = None
+            for burn_step in range(1, burn_times + 1):
+                current_duration = 0
+                print ("burn_step", burn_step)
+                collected_parts = torch.empty(1,0)
+                seeds = {}
+                if (prev_layer is not None):
+                        audio_write(
+                                'out/_preview_tmp',
+                                prev_layer['wav'], 
+                                self.model.sample_rate, 
+                                strategy="loudness",
+                                loudness_compressor=False
+                        )
+                while round(current_duration) < total_duration:
+                    chroma_part = None
+                    if (prev_layer is not None):
+                        chroma_part = prev_layer['wav'][..., int(current_duration) * self.model.sample_rate :int(current_duration + PART_LEN) * self.model.sample_rate :].to(self.model.device)
+                        torch.manual_seed(prev_layer['seeds'][current_duration])
+
+                    seeds[current_duration] =  torch.seed()
+                    print ("seeds", seeds)
+                    current_duration = collected_parts.shape[1] / self.model.sample_rate
+                    print ("current_duration", current_duration , '/', total_duration)
+                    part_to_continue = collected_parts[..., -int(PART_LEN * self.model.sample_rate):].to(self.model.device)
+                    part_to_continue = part_to_continue[..., -int(CUT_LEN * self.model.sample_rate):]
+                    part_to_continue_length = part_to_continue.shape[1]
+                    planned_duration = min(PART_LEN, total_duration - int(current_duration - part_to_continue_length))
+                    if chroma_part is not None:
+                        chroma_part = chroma_part[..., :int(planned_duration * self.model.sample_rate)]
+                    print ("part_to_continue duration", part_to_continue.shape[1] / self.model.sample_rate)
+                    if chroma_part is not None:
+                        print ("chroma_part", chroma_part.shape, chroma_part.shape[1]/self.model.sample_rate)
+                    print ("planned_duration", planned_duration)
+                    print ("part_to_continue", part_to_continue.shape)
+                    if part_to_continue_length == 0:
+                        part_to_continue = None
+                    last_wav = continue_melody(
+                        model = self.model,
+                        prompt = part_to_continue,
+                        rate=self.model.sample_rate,
+                        descriptions=descriptions,
+                        duration = planned_duration,
+                        seed = seed,
+                        melody_wavs=chroma_part
+                    )
+                    last_wav = last_wav[0]
+                    orig_last_wav = last_wav
+                    print ("last_wav before", last_wav.shape)
+                    print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
+                    last_wav = last_wav[...,max(part_to_continue_length, 0):]
+                    if (planned_duration > PART_LEN and TAIL_CUT_LEN > 0):
+                        last_wav = last_wav[..., : -TAIL_CUT_LEN * self.model.sample_rate]
+                    print ("last_wav", last_wav.shape)
+                    collected_parts = torch.cat([collected_parts, last_wav.cpu()], dim = 1)
+                    current_duration = collected_parts.shape[1] / self.model.sample_rate
+                    audio_write(
+                        'out/_preview_part_tmp',
                         collected_parts.cpu(), 
                         self.model.sample_rate, 
                         strategy="loudness",
                         loudness_compressor=False
-                )
-                current_duration = collected_parts.shape[1] / self.model.sample_rate
-                print ("current_duration", current_duration , '/', total_duration)
-                part_to_continue = collected_parts[..., -int(PART_LEN * self.model.sample_rate):].to(self.model.device)
-                part_to_continue = part_to_continue[..., -int(CUT_LEN * self.model.sample_rate):]
-                part_to_continue_length = part_to_continue.shape[1]
-                planned_duration = min(PART_LEN, total_duration - int(current_duration - part_to_continue_length))
-                print ("part_to_continue duration", part_to_continue.shape[1] / self.model.sample_rate)
-                print ("planned_duration", planned_duration)
-                print ("part_to_continue", part_to_continue.shape)
-                last_wav = continue_melody(
-                    model = self.model,
-                    prompt = part_to_continue,
-                    rate=self.model.sample_rate,
-                    descriptions=descriptions,
-                    duration = planned_duration,
-                    seed = seed,
-                    melody_wavs=orig_last_wav.to(self.model.device) if burn_times > 0 else None
-                )
-                last_wav = last_wav[0]
-                orig_last_wav = last_wav
-                print ("last_wav before", last_wav.shape)
-                print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
-                last_wav = last_wav[...,max(part_to_continue_length, 0):]
-                if (planned_duration > PART_LEN and TAIL_CUT_LEN > 0):
-                    last_wav = last_wav[..., : -TAIL_CUT_LEN * self.model.sample_rate]
-                print ("last_wav", last_wav.shape)
-                collected_parts = torch.cat([collected_parts, last_wav.cpu()], dim = 1)
-                current_duration = collected_parts.shape[1] / self.model.sample_rate
+                    )
+                prev_layer = {
+                    'seeds': seeds,
+                    'wav': collected_parts.cpu(),
+                }
         else:
             total_duration = duration
         file_name = f'out/{prompt.strip().replace(" ", "_").replace(":","=")}-{seed}-{int(collected_parts.shape[1]/self.model.sample_rate)}s'
