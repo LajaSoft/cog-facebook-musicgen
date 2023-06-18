@@ -18,6 +18,8 @@ import calendar
 import time
 import json
 from utils import convert_to_mp3
+from pass_filter import filter_chain
+import timeit
 
 def load_config():
     if os.path.exists('musicgen_config.json'):
@@ -70,36 +72,6 @@ def continue_melody(model, prompt, rate: int, descriptions = [], duration = PART
 
 #def generate_with_chroma(self, descriptions: tp.List[str], melody_wavs: MelodyType,
 #                             melody_sample_rate: int, progress: bool = False) -> torch.Tensor:
-def chroma_burn(model, prompt, rate: int, descriptions = [], seed = random.randint(0, 1000000000), steps = 1) -> torch.Tensor:
-    whole_melody = prompt
-    whole_melody_duration = whole_melody.shape[1]
-    for i in range(steps):
-        audio_write(
-                'out/_preview_tmp',
-                whole_melody.cpu(), 
-                model.sample_rate, 
-                strategy="loudness",
-                loudness_compressor=True
-        )
-        print ("burning step", i, 'with seed', seed)
-        # if whole melody longer than part steps slice it and burn each part
-        for seek in range(0, whole_melody_duration, PART_LEN * rate):
-            print(seek/rate)
-            torch.manual_seed(seed)
-            planned_duration = min(PART_LEN, int((whole_melody_duration - seek) / rate))
-            model.set_generation_params(duration=planned_duration)
-            current_melody = whole_melody[:, seek: seek + planned_duration * rate]
-            print("whole_melody", whole_melody.shape)
-            print("current_melody", current_melody.shape)
-            current_melody = model.generate_with_chroma(
-                descriptions=descriptions,
-                melody_wavs=current_melody,
-                melody_sample_rate=rate,
-            )
-            # replace part of whole melody with current melody
-            whole_melody[0, seek: seek + PART_LEN * rate] = current_melody.cpu()[0]
-    print("whole_melody", whole_melody.shape, whole_melody.shape[1]/rate)
-    return whole_melody
 
 def generate_continuation_with_chroma(model, prompt: torch.Tensor, prompt_sample_rate: int,
                             descriptions: tp.Optional[tp.List[tp.Optional[str]]] = None, melody_wavs: MelodyType = None,
@@ -151,7 +123,7 @@ class Predictor(BasePredictor):
 
     def predict(
         self,
-		prompt:str = 'happy birthday polka',
+        prompt:str = 'happy birthday polka',
         duration:int = 10,
         seed:int = random.randint(0, 1000000000),
         burn_times:int = 0,
@@ -159,16 +131,24 @@ class Predictor(BasePredictor):
         top_k:int = 250,
         top_p:float = 0,
         cfg_coef:float = 3.0,
-        use_sampling: bool = True
+        use_sampling: bool = True,
+        lowpass_cutoff: int = 20000,
+        highpass_cutoff: int = 500,
+        low_filter_bandwidth: int = 300,
+        high_filter_bandwidth: int = 1000,
+        lowpass: bool = True,
+        highpass: bool = True
+
     ) ->Iterator[Path]:
         """Run a single prediction on the model"""
-        total_duration = 0
-        if (duration > PART_LEN):
-            total_duration = duration
-            duration = PART_LEN
+        total_duration = duration
+        # if (duration > PART_LEN):
+        #     total_duration = duration
+        #     duration = PART_LEN
 
         descriptions = [prompt]
         torch.manual_seed(seed)
+        random.seed(seed)
 
         configuration_data = {
             'model_size': self.model_size,
@@ -180,23 +160,22 @@ class Predictor(BasePredictor):
             'cfg_coef': cfg_coef,
             'burn_times': burn_times,
             'description': prompt,
-            'use_sampling': use_sampling
+            'use_sampling': use_sampling,
+            **({
+                'lowpass_cutoff': lowpass_cutoff
+               } if lowpass else {}),
+            **({
+                'highpass_cutoff': highpass_cutoff
+               } if highpass else {})
         }
+        timestamp = int(time.time())
         self.model.set_generation_params(duration=duration, temperature=temperature, top_k=top_k, top_p=top_p, cfg_coef=cfg_coef, use_sampling=use_sampling)
         collected_parts = None
-        if (total_duration == 0):
-            all_parts = self.model.generate(descriptions, progress = True)  # generates .
-            current_duration = duration
-            collected_parts = all_parts[0]
-            chroma = chroma_burn( 
-                model = self.model,
-                prompt= collected_parts.cpu(),
-                rate= self.model.sample_rate,
-                descriptions= descriptions,
-                seed= seed, 
-                steps = burn_times
-                )
-            collected_parts = chroma.cpu()
+        wav_filter = None
+        if lowpass:
+            wav_filter = filter_chain(filter_type="low", cutoff_freq=lowpass_cutoff, transition_bandwidth = low_filter_bandwidth, sample_rate=self.model.sample_rate, filter=wav_filter)
+        if highpass:
+            wav_filter = filter_chain(filter_type="high", cutoff_freq = highpass_cutoff, transition_bandwidth = high_filter_bandwidth, sample_rate=self.model.sample_rate, filter=wav_filter)
         if total_duration:
             prev_layer = None
             for burn_step in range(1, burn_times + 1):
@@ -214,7 +193,8 @@ class Predictor(BasePredictor):
                         )
                         part_file_name = (
                             f'out/{prompt.strip().replace(" ", "_").replace(":","=")}-{seed}-{int(prev_layer["wav"].shape[1]/self.model.sample_rate)}s' +
-                            f'-burn={burn_step-2}' #if you see it - sorry!
+                            f'-burn={burn_step-2}' + #if you see it - sorry!
+                            f'_{timestamp}'
                         )
                         convert_to_mp3('out/_preview_tmp.wav', f'{part_file_name}.mp3', configuration_data)
                 while round(current_duration) < total_duration:
@@ -222,6 +202,7 @@ class Predictor(BasePredictor):
                     if (prev_layer is not None):
                         chroma_part = prev_layer['wav'][..., int(current_duration) * self.model.sample_rate :int(current_duration + PART_LEN) * self.model.sample_rate :].to(self.model.device)
                         torch.manual_seed(prev_layer['seeds'][current_duration])
+                        random.seed(prev_layer['seeds'][current_duration])
 
                     seeds[current_duration] =  torch.seed()
                     print ("seeds", seeds)
@@ -233,9 +214,8 @@ class Predictor(BasePredictor):
                     planned_duration = min(PART_LEN, total_duration - int(current_duration - part_to_continue_length))
                     if chroma_part is not None:
                         chroma_part = chroma_part[..., :int(planned_duration * self.model.sample_rate)]
-                    print ("part_to_continue duration", part_to_continue.shape[1] / self.model.sample_rate)
-                    if chroma_part is not None:
                         print ("chroma_part", chroma_part.shape, chroma_part.shape[1]/self.model.sample_rate)
+                    print ("part_to_continue duration", part_to_continue.shape[1] / self.model.sample_rate)
                     print ("planned_duration", planned_duration)
                     print ("part_to_continue", part_to_continue.shape)
                     if part_to_continue_length == 0:
@@ -250,6 +230,7 @@ class Predictor(BasePredictor):
                         melody_wavs=chroma_part
                     )
                     last_wav = last_wav[0]
+                    last_wav = wav_filter(last_wav)
                     orig_last_wav = last_wav
                     print ("last_wav before", last_wav.shape)
                     print ("CUT LEN, rate", CUT_LEN, self.model.sample_rate)
@@ -277,7 +258,7 @@ class Predictor(BasePredictor):
         if (burn_times > 0):
             file_name = f'{file_name}_burned={burn_times}'
         # add timestamp to filename
-        file_name = f'{file_name}_{int(time.time())}'
+        file_name = f'{file_name}_{timestamp}'
         audio_write(
                 file_name,
                 collected_parts.cpu(), 
@@ -290,3 +271,20 @@ class Predictor(BasePredictor):
         #remove wav
         os.remove(f'{file_name}.wav')
         yield Path(f'{file_name}.mp3')
+
+def measure_execution_time(function, *args, **kwargs):
+    # Создаем Timer с переданной функцией и её аргументами
+    timer = timeit.Timer(lambda: function(*args, **kwargs))
+    
+    # Измеряем время выполнения. number указывает, сколько раз выполнить функцию.
+    # В этом примере функция выполняется один раз.
+    elapsed_time = timer.timeit(number=1)
+    
+    # Печатаем затраченное время
+    print(f'execution time {function.__name__}: {elapsed_time} seconds')
+    
+    # Вызываем функцию снова для получения результата, так как timeit не возвращает результат выполнения функции
+    result = function(*args, **kwargs)
+    
+    # Возвращаем результат выполнения функции
+    return result
